@@ -8,15 +8,15 @@ Code modified from Keras module
 
 import numpy as np
 
-import keras
-import keras.backend as K
+import tensorflow.keras
+import tensorflow.keras.backend as K
 import tensorflow as tf
 from sklearn.metrics import (precision_recall_fscore_support,
                              #f1_score, fbeta_score,
                              classification_report)
 
 
-class ClasswisePerformance(keras.callbacks.Callback):
+class ClasswisePerformance(tensorflow.keras.callbacks.Callback):
     """Callback to calculate precision, recall, F1-score after each epoch"""
 
     def __init__(self, test_gen, gen_steps=100):

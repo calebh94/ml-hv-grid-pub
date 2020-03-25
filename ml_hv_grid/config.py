@@ -6,27 +6,36 @@ List some configuration parameters for training model
 
 import os
 from os import path as op
-#from hyperopt import hp
+from hyperopt import hp
 
 # Set filepaths pointing to data that will be used in training
-data_fnames = [op.join('data_nigeria', 'data5.npz'),
-               op.join('data_pakistan', 'data5.npz'),
-               op.join('data_zambia', 'data5.npz')]
-dataset_fpaths = [op.join(os.environ['BUILDS_DIR'], 'ml-hv-grid', fname)
-                  for fname in data_fnames]
+data_dir = 'imgs//DC_imgs//classify'
+
+# data_fnames = [op.join('data_nigeria', 'data5.npz'),
+#                op.join('data_pakistan', 'data5.npz'),
+#                op.join('data_zambia', 'data5.npz')]
+# dataset_fpaths = [op.join(os.environ['BUILDS_DIR'], 'ml-hv-grid', fname)
+#                   for fname in data_fnames]
 
 # Set directories for saving model weights and tensorboard information
-if os.environ['USER'] == 'ec2-user':
-    ckpt_dir = op.join('/mnt', 'models')
-    tboard_dir = op.join('/mnt', 'tensorboard')
-    preds_dir = op.join('/mnt', 'preds')
-    cloud_comp = True
-else:
-    ckpt_dir = op.join(os.environ['BUILDS_DIR'], 'ml-hv-grid', 'models')
-    tboard_dir = op.join(os.environ['BUILDS_DIR'], 'ml-hv-grid', 'tensorboard')
-    preds_dir = op.join(os.environ['BUILDS_DIR'], 'ml-hv-grid', 'preds')
-    plot_dir = op.join(os.environ['BUILDS_DIR'], 'ml-hv-grid', 'plots')
-    cloud_comp = False
+# if os.environ['USER'] == 'ec2-user':
+#     ckpt_dir = op.join('/mnt', 'models')
+#     tboard_dir = op.join('/mnt', 'tensorboard')
+#     preds_dir = op.join('/mnt', 'preds')
+#     cloud_comp = True
+# else:
+#     ckpt_dir = op.join(os.environ['BUILDS_DIR'], 'ml-hv-grid', 'models')
+#     tboard_dir = op.join(os.environ['BUILDS_DIR'], 'ml-hv-grid', 'tensorboard')
+#     preds_dir = op.join(os.environ['BUILDS_DIR'], 'ml-hv-grid', 'preds')
+#     plot_dir = op.join(os.environ['BUILDS_DIR'], 'ml-hv-grid', 'plots')
+#     cloud_comp = False
+
+cloud_comp = False
+ckpt_dir = op.join(data_dir, 'models')
+tboard_dir = op.join(data_dir, 'tensorboard')
+tboard_dir = 'imgs\\DC_imgs\\classify\\tensorboard'
+preds_dir = op.join(data_dir,  'preds')
+plot_dir = op.join(data_dir, 'plots')
 
 if not op.isdir(ckpt_dir):
     os.mkdir(ckpt_dir)
@@ -52,7 +61,7 @@ train_params = dict(n_rand_hp_iters=3,
                     n_total_hp_iters=100,
                     n_epo_phase1=[2, 4],  # number of epochs training only top layer
                     n_epo_phase2=18,  # number of epochs fine tuning whole model
-                    batch_size=32,  # Want as large as GPU can handle, using batch-norm layers
+                    batch_size=4,  # Want as large as GPU can handle, using batch-norm layers
                     prop_total_img_set=0.5,  # Proportion of total images per train epoch
                     img_size=(256, 256, 3),
                     early_stopping_patience=5,  # Number of iters w/out val_acc increase
@@ -63,20 +72,20 @@ train_params = dict(n_rand_hp_iters=3,
                     shuffle_seed=42)  # Seed for random number generator
 
 
-download_params = dict(aws_bucket_name='ds-ml-labs',
-                       aws_dir='datasets/hv_pred_set/pakistan',
-                       aws_region='us-east-1',
-                       tile_ind_list=op.join(preds_dir, 'tile_inds_Pakistan_18.txt'),
-                       tile_ind_list_format=['cover', 'tabbed', 'spaced'][2],  # cover.js or tab/space separated
-                       n_green_threads=500,
-                       download_prob=0.05,  # 0.1 downloads 10%, 0.9 downloads 90%
-                       url_template='https://api.mapbox.com/v4/digitalglobe.2lnpeioh/{z}/{x}/{y}.png?access_token={token}'.format(
-                           x='{x}', y='{y}', z='{z}', token=os.environ['VIVID_ACCESS_TOKEN']))
+# download_params = dict(aws_bucket_name='ds-ml-labs',
+#                        aws_dir='datasets/hv_pred_set/pakistan',
+#                        aws_region='us-east-1',
+#                        tile_ind_list=op.join(preds_dir, 'tile_inds_Pakistan_18.txt'),
+#                        tile_ind_list_format=['cover', 'tabbed', 'spaced'][2],  # cover.js or tab/space separated
+#                        n_green_threads=500,
+#                        download_prob=0.05,  # 0.1 downloads 10%, 0.9 downloads 90%
+#                        url_template='https://api.mapbox.com/v4/digitalglobe.2lnpeioh/{z}/{x}/{y}.png?access_token={token}'.format(
+#                            x='{x}', y='{y}', z='{z}', token=os.environ['VIVID_ACCESS_TOKEN']))
 
-gen_tile_inds_params = dict(geojson_bounds=op.join(preds_dir, 'all_country_bounds.geojson'),
-                            geojson_pakistan_bounds=op.join(preds_dir, 'pakistan_WB.geojson'),  # Seperate bounding box for Pakistan
-                            country='Pakistan',
-                            max_zoom=18)
+# gen_tile_inds_params = dict(geojson_bounds=op.join(preds_dir, 'all_country_bounds.geojson'),
+#                             geojson_pakistan_bounds=op.join(preds_dir, 'pakistan_WB.geojson'),  # Seperate bounding box for Pakistan
+#                             country='Pakistan',
+#                             max_zoom=18)
 
 pred_params = dict(aws_bucket_name='ds-ml-labs',
                    #aws_country_dir='datasets/hv_pred_set/Zambia',  # File dir for images
@@ -84,7 +93,7 @@ pred_params = dict(aws_bucket_name='ds-ml-labs',
                    aws_pred_dir='datasets/hv_pred_set/',  # File dir for prediction values
                    local_img_dir=op.join(preds_dir, 'zambia_147'),
                    model_time='0129_052307',
-                   single_batch_size=16,  # Number of images seen by a single GPU
+                   single_batch_size=4,  # Number of images seen by a single GPU
                    n_gpus=1,
                    deci_prec=4)  # Number of decimal places in prediction precision
 pred_params.update(dict(model_arch_fname='{}_arch.yaml'.format(pred_params['model_time']),

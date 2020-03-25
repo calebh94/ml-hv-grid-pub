@@ -2,6 +2,8 @@
 train_xcept.py
 
 Train the Xception network to classify HV towers and substations
+
+Modified on: 3/24/2020 by Caleb Harris (caleb.harris94@gatech.edu)
 """
 import os
 from os import path as op
@@ -9,16 +11,18 @@ from functools import partial
 from datetime import datetime as dt
 import pickle
 import pprint
-
 import numpy as np
-from keras import backend as K
-from keras.models import Model
-from keras.layers import Dense, Dropout
-from keras.optimizers import Adam, rmsprop, SGD, Nadam
-from tensorflow.python.keras.optimizers import TFOptimizer
-from keras.applications.xception import Xception, preprocess_input as xcept_preproc
-from keras.preprocessing.image import ImageDataGenerator
-from keras.callbacks import (ModelCheckpoint, EarlyStopping, TensorBoard,
+
+# import tensorflow as tf
+
+from tensorflow.keras import backend as K
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.optimizers import Adam, RMSprop, SGD, Nadam
+from tensorflow.keras.optimizers import Optimizer
+from tensorflow.keras.applications.xception import Xception, preprocess_input as xcept_preproc
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.callbacks import (ModelCheckpoint, EarlyStopping, TensorBoard,
                              ReduceLROnPlateau)
 
 from hyperopt import fmin, Trials, STATUS_OK, tpe
@@ -26,8 +30,11 @@ import yaml
 
 from utils import print_start_details, print_end_details
 from utils_training import ClasswisePerformance
-from config import (get_params, tboard_dir, ckpt_dir, data_dir,
-                    model_params as MP, train_params as TP, data_flow as DF)
+from config import (get_params, tboard_dir, ckpt_dir,
+                    data_dir,
+                    model_params as MP, train_params as TP,
+                    # train_params as DF)
+                    )
 
 
 def get_optimizer(opt_params, lr):
@@ -50,28 +57,29 @@ def get_optimizer(opt_params, lr):
     elif opt_params['opt_func'] == 'adam':
         return Adam(lr=lr)
     elif opt_params['opt_func'] == 'rmsprop':
-        return rmsprop(lr=lr)
+        return RMSprop(lr=lr)
     elif opt_params['opt_func'] == 'nadam':
         return Nadam(lr=lr)
-    elif opt_params['opt_func'] == 'powersign':
-        from tensorflow.contrib.opt.python.training import sign_decay as sd
-        d_steps = opt_params['pwr_sign_decay_steps']
-        # Define the decay function (if specified)
-        if opt_params['pwr_sign_decay_func'] == 'lin':
-            decay_func = sd.get_linear_decay_fn(d_steps)
-        elif opt_params['pwr_sign_decay_func'] == 'cos':
-            decay_func = sd.get_consine_decay_fn(d_steps)
-        elif opt_params['pwr_sign_decay_func'] == 'res':
-            decay_func = sd.get_restart_decay_fn(d_steps,
-                                                 num_periods=opt_params['pwr_sign_decay_periods'])
-        elif opt_params['decay_func'] is None:
-            decay_func = None
-        else:
-            raise ValueError('decay function not specified correctly')
-
-        # Use decay function in TF optimizer
-        return TFOptimizer(PowerSignOptimizer(learning_rate=lr,
-                                              sign_decay_fn=decay_func))
+    # elif opt_params['opt_func'] == 'powersign':
+    #     # from tensorflow.contrib.opt.python.training import sign_decay as sd
+    #     from tensorflow.python.training import sign_decay as sd
+    #     d_steps = opt_params['pwr_sign_decay_steps']
+    #     # Define the decay function (if specified)
+    #     if opt_params['pwr_sign_decay_func'] == 'lin':
+    #         decay_func = sd.get_linear_decay_fn(d_steps)
+    #     elif opt_params['pwr_sign_decay_func'] == 'cos':
+    #         decay_func = sd.get_consine_decay_fn(d_steps)
+    #     elif opt_params['pwr_sign_decay_func'] == 'res':
+    #         decay_func = sd.get_restart_decay_fn(d_steps,
+    #                                              num_periods=opt_params['pwr_sign_decay_periods'])
+    #     elif opt_params['decay_func'] is None:
+    #         decay_func = None
+    #     else:
+    #         raise ValueError('decay function not specified correctly')
+    #
+    #     # Use decay function in TF optimizer
+    #     return Optimizer(PowerSignOptimizer(learning_rate=lr,
+    #                                           sign_decay_fn=decay_func))
     else:
         raise ValueError
 
@@ -101,18 +109,27 @@ def xcept_net(params):
     ######################
     # Paths and Callbacks
     ######################
-    ckpt_fpath = op.join(ckpt_dir, mst_str + '_L{val_loss:.2f}_E{epoch:02d}_weights.h5')
+    # ckpt_fpath = op.join(ckpt_dir, mst_str + '_L{val_loss:.2f}_E{epoch:02d}_weights.h5')  #Error...maybe val data not loaded correctly...
+    ckpt_fpath = op.join(ckpt_dir, mst_str + '_E{epoch:02d}_weights.h5')
     tboard_model_dir = op.join(tboard_dir, mst_str)
+    tboard_model_dir = tboard_dir + '\\' + mst_str  # TF Bug where this much use '\\' as slashes!
+    # 'imgs\\DC_imgs\\classify\\tensorboard'
+    if op.exists(tboard_model_dir) == False:
+        os.mkdir(tboard_model_dir)
+        os.mkdir(os.path.join(tboard_model_dir, 'train'))
 
     print('Creating test generator.')
     test_iter = test_gen.flow_from_directory(
         directory=op.join(data_dir, 'test'), shuffle=False,  # Helps maintain consistency in testing phase
-        **DF['flow_from_dir'])
+        # **DF['flow_from_dir'])
+    )
     test_iter.reset()  # Reset for each model so it's consistent; ideally should reset every epoch
 
-    callbacks_phase1 = [TensorBoard(log_dir=tboard_model_dir, histogram_freq=0,
-                                    write_grads=False, embeddings_freq=0)]
+    # callbacks_phase1 = [TensorBoard(log_dir=tboard_model_dir, histogram_freq=0,
+    #                                 write_grads=False, embeddings_freq=0)]
+    tensorboard_callback = TensorBoard(log_dir=tboard_model_dir)
                                     #embeddings_layer_names=['dense_preoutput', 'dense_output'])]
+    # Go watch, via command line $ tensorboard --logdir {path-to-directory} (i.e. tensorboard/..
     # Set callbacks to save performance to TB, modify learning rate, and stop poor trials early
     callbacks_phase2 = [
         TensorBoard(log_dir=tboard_model_dir, histogram_freq=0,
@@ -123,7 +140,7 @@ def xcept_net(params):
                         save_weights_only=True, save_best_only=False),
         EarlyStopping(min_delta=TP['early_stopping_min_delta'],
                       patience=TP['early_stopping_patience'], verbose=1),
-        ReduceLROnPlateau(min_delta=TP['reduce_lr_min_delta'],
+        ReduceLROnPlateau(min_delta=TP['reduce_lr_epsilon'],
                           patience=TP['reduce_lr_patience'], verbose=1)]
 
     #########################
@@ -145,8 +162,10 @@ def xcept_net(params):
         x = Dropout(rate=params['dropout_rate'])(x)
 
     # Finally, add output layer
+    #TODO: fogure out where this should be given
+    params['n_classes'] = 2
     pred = Dense(params['n_classes'],
-                 activation=params['output_activation'],
+                 activation=params['dense_activation'],
                  name='dense_output')(x)
 
     model = Model(inputs=base_model.input, outputs=pred)
@@ -168,7 +187,7 @@ def xcept_net(params):
             yaml_file.write(yaml.dump(params))
             yaml_file.write(yaml.dump(TP))
             yaml_file.write(yaml.dump(MP))
-            yaml_file.write(yaml.dump(DF))
+            # yaml_file.write(yaml.dump(DF))
 
     ##########################
     # Train the new top layers
@@ -184,56 +203,86 @@ def xcept_net(params):
                   metrics=MP['metrics'])
 
     print('Phase 1, training near-output layer(s)')
-    hist = model.fit_generator(
-        train_gen.flow_from_directory(directory=op.join(data_dir, 'train'),
-                                      **DF['flow_from_dir']),
+    #TODO: Figure out right placement
+    params['steps_per_test_epo'] = int(np.ceil(total_test_images / TP['batch_size']) + 1)
+    params['steps_per_train_epo'] = int(np.ceil(total_train_images / TP['batch_size']) + 1)
+    params['max_queue_size'] = 4
+    params['workers'] = 1  #Important, right?
+    params['use_multiprocessing'] = False  #important, right?s
+    params['class_weight'] = {0: 1., 1: 5.}  # From config...
+    params['batch_size'] = TP['batch_size']
+    # hist = model.fit_generator(
+    #     train_gen.flow_from_directory(directory=op.join(data_dir, 'train'),
+    #                                   # **DF['flow_from_dir']),
+    #                                   ),
+    #     steps_per_epoch=params['steps_per_train_epo'],
+    #     epochs=int(params['n_epo_phase1']),
+    #     # callbacks=callbacks_phase1,
+    #     callbacks=[tensorboard_callback],
+    #     max_queue_size=params['max_queue_size'],
+    #     workers=params['workers'],
+    #     use_multiprocessing=params['use_multiprocessing'],
+    #     class_weight=params['class_weight'],
+    #     # batch_size=params['batch_size'],
+    #     verbose=1)
+    hist = model.fit(
+        #TODO: Auto grab these values...
+        train_gen.flow_from_directory(directory=op.join(data_dir, 'train'), target_size=(256,256), batch_size=4, shuffle=True),
+        validation_data=val_gen.flow_from_directory(directory=op.join(data_dir,'val'), target_size=(256,256), batch_size=4, shuffle=True),
+        # batch_size=TP['batch_size'],
         steps_per_epoch=params['steps_per_train_epo'],
-        epochs=params['n_epo_phase1'],
-        callbacks=callbacks_phase1,
+        epochs=int(params['n_epo_phase1']),
+        callbacks=[tensorboard_callback],
         max_queue_size=params['max_queue_size'],
         workers=params['workers'],
         use_multiprocessing=params['use_multiprocessing'],
         class_weight=params['class_weight'],
-        verbose=1)
-
-    ###############################################
-    # Train entire network to fine-tune performance
-    ###############################################
-    # Visualize layer names/indices to see how many layers to freeze:
-    #print('Layer freeze cutoff = {}'.format(params['freeze_cutoff']))
-    #for li, layer in enumerate(base_model.layers):
-    #    print(li, layer.name)
-
-    # Set all layers trainable
-    for layer in model.layers:
-        layer.trainable = True
-
-    # Recompile model for second round of training
-    model.compile(optimizer=get_optimizer(params['optimizer'],
-                                          params['lr_phase2']),
-                  loss=params['loss'],
-                  metrics=MP['metrics'])
-
-    print('\nPhase 2, training from layer {} on.'.format(params['freeze_cutoff']))
-    test_iter.reset()  # Reset for each model so it's consistent; ideally should reset every epoch
-
-    hist = model.fit_generator(
-        train_gen.flow_from_directory(directory=op.join(data_dir, 'train'),
-                                      **DF['flow_from_dir']),
-        steps_per_epoch=params['steps_per_train_epo'],
-        epochs=params['n_epo_phase2'],
-        max_queue_size=params['max_queue_size'],
-        workers=params['workers'],
-        use_multiprocessing=params['use_multiprocessing'],
-        validation_data=test_iter,
-        validation_steps=params['steps_per_test_epo'],
-        callbacks=callbacks_phase2,
-        class_weight=params['class_weight'],
-        verbose=1)
+        verbose=1
+    )
+    #TODO: Need to add Validation data.  See https://keras.io/models/model/#fit_generator
+    #TODO: Need to update to model.fit().  See https://www.tensorflow.org/api_docs/python/tf/keras/Model#fit
+    
+# TURNING OFF SECOND TRAINING FOR NOW...
+    # ###############################################
+    # # Train entire network to fine-tune performance
+    # ###############################################
+    # # Visualize layer names/indices to see how many layers to freeze:
+    # #print('Layer freeze cutoff = {}'.format(params['freeze_cutoff']))
+    # #for li, layer in enumerate(base_model.layers):
+    # #    print(li, layer.name)
+    #
+    # # Set all layers trainable
+    # for layer in model.layers:
+    #     layer.trainable = True
+    #
+    # # Recompile model for second round of training
+    # model.compile(optimizer=get_optimizer(params['optimizer'],
+    #                                       params['lr_phase2']),
+    #               loss=params['loss'],
+    #               metrics=MP['metrics'])
+    #
+    # print('\nPhase 2, training from layer {} on.'.format(params['freeze_cutoff']))
+    # test_iter.reset()  # Reset for each model so it's consistent; ideally should reset every epoch
+    #
+    # hist = model.fit_generator(
+    #     train_gen.flow_from_directory(directory=op.join(data_dir, 'train')),
+    #                                   # **DF['flow_from_dir']),
+    #     steps_per_epoch=params['steps_per_train_epo'],
+    #     epochs=params['n_epo_phase2'],
+    #     max_queue_size=params['max_queue_size'],
+    #     workers=params['workers'],
+    #     use_multiprocessing=params['use_multiprocessing'],
+    #     validation_data=test_iter,
+    #     validation_steps=params['steps_per_test_epo'],
+    #     callbacks=callbacks_phase2,
+    #     class_weight=params['class_weight'],
+    #     verbose=1)
 
     # Return best of last validation accuracies
     check_ind = -1 * (TP['early_stopping_patience'] + 1)
-    result_dict = dict(loss=np.min(hist.history['val_loss'][check_ind:]),
+    # result_dict = dict(loss=np.min(hist.history['val_loss'][check_ind:]),
+    #                    status=STATUS_OK)
+    result_dict = dict(loss=np.min(hist.history['loss'][check_ind:]),
                        status=STATUS_OK)
 
     return result_dict
@@ -247,26 +296,40 @@ if __name__ == '__main__':
     # Calculate number of train/test images
     ###################################
     total_test_images = 0
+    total_train_images = 0
     # Print out how many images are available for train/test
-    for fold in ['train', 'test']:
-        for sub_fold in ['negatives', 'towers', 'substations']:
+    # for fold in ['train', 'test']:
+    for fold in ['train','val','test']:
+        # for sub_fold in ['negatives', 'towers', 'substations']:
+        for sub_fold in ['Pole', 'Nopole']:
             temp_img_dir = op.join(data_dir, fold, sub_fold)
             n_fnames = len([fname for fname in os.listdir(temp_img_dir)
-                            if op.splitext(fname)[1] in ['.png', 'jpg']])
+                            if op.splitext(fname)[1] in ['.png', '.jpg']])
             print('For {}ing, found {} {} images'.format(fold, n_fnames, sub_fold))
 
             if fold == 'test':
                 total_test_images += n_fnames
-    if TP['steps_per_test_epo'] is None:
-        TP['steps_per_test_epo'] = int(np.ceil(total_test_images /
-                                               DF['flow_from_dir']['batch_size']) + 1)
+            elif fold == 'train':
+                total_train_images += n_fnames
+    # if TP['steps_per_test_epo'] is None:
+    #     TP['steps_per_test_epo'] = int(np.ceil(total_test_images /
+    #                                            DF['flow_from_dir']['batch_size']) + 1)
+    TP['steps_per_test_epo'] = int(np.ceil(total_test_images / TP['batch_size']) + 1)
+    TP['steps_per_train_epo'] = int(np.ceil(total_train_images / TP['batch_size']) / 4 + 1)  #TODO: fix, added /4 to reduce...
+
+
 
     ###################################
     # Set up generators
     ###################################
     train_gen = ImageDataGenerator(preprocessing_function=xcept_preproc,
-                                   **DF['image_data_generator'])
+                                   # **DF['image_data_generator'])
+                                   )
+    #TODO: Add imagedatagenerator params...such as flip, rotateoin, normalization, etc.
     test_gen = ImageDataGenerator(preprocessing_function=xcept_preproc)
+
+    val_gen = ImageDataGenerator(preprocessing_function=xcept_preproc)
+
 
     ############################################################
     # Run training with hyperparam optimization (using hyperopt)
