@@ -9,7 +9,7 @@ from os import path as op
 from hyperopt import hp
 
 # Set filepaths pointing to data that will be used in training
-data_dir = 'imgs//DC_imgs//classify'
+data_dir = 'imgs//DC_imgs//classify_fixes'
 
 # data_fnames = [op.join('data_nigeria', 'data5.npz'),
 #                op.join('data_pakistan', 'data5.npz'),
@@ -57,12 +57,12 @@ model_params = dict(loss=['binary_crossentropy'],
                     dense_activation=['relu', 'elu'],
                     dropout_rate=[0])  # Dropout in final layer
 
-train_params = dict(n_rand_hp_iters=3,
-                    n_total_hp_iters=100,
+train_params = dict(n_rand_hp_iters=2,
+                    n_total_hp_iters=2,
                     n_epo_phase1=[2, 4],  # number of epochs training only top layer
                     n_epo_phase2=18,  # number of epochs fine tuning whole model
                     batch_size=4,  # Want as large as GPU can handle, using batch-norm layers
-                    prop_total_img_set=0.5,  # Proportion of total images per train epoch
+                    prop_total_img_set=1.0,  # Proportion of total images per train epoch
                     img_size=(256, 256, 3),
                     early_stopping_patience=5,  # Number of iters w/out val_acc increase
                     early_stopping_min_delta=0.01,
@@ -92,13 +92,13 @@ pred_params = dict(aws_bucket_name='ds-ml-labs',
                    pred_fname='preds_zambia_147.json',  # File name for predictions
                    aws_pred_dir='datasets/hv_pred_set/',  # File dir for prediction values
                    local_img_dir=op.join(preds_dir, 'zambia_147'),
-                   model_time='0129_052307',
+                   model_time='0327_150115',
                    single_batch_size=4,  # Number of images seen by a single GPU
                    n_gpus=1,
                    deci_prec=4)  # Number of decimal places in prediction precision
 pred_params.update(dict(model_arch_fname='{}_arch.yaml'.format(pred_params['model_time']),
                         model_params_fname='{}_params.yaml'.format(pred_params['model_time']),
-                        model_weights_fname='{}_L0.18_E16_weights.h5'.format(pred_params['model_time'])))
+                        model_weights_fname='{}_E04_weights.h5'.format(pred_params['model_time'])))
 
 #pred_fnames = ['preds_nigeria_{}.json'.format(num) for num in range(133, 142)]
 #geojson_out_fnames = ['maps_nigeria_{}.geojson'.format(num) for num in range(133, 142)]

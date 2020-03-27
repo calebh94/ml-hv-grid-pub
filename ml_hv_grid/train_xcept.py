@@ -118,12 +118,18 @@ def xcept_net(params):
         os.mkdir(tboard_model_dir)
         os.mkdir(os.path.join(tboard_model_dir, 'train'))
 
-    print('Creating test generator.')
+    print('Creating validation and test generator.')
     test_iter = test_gen.flow_from_directory(
         directory=op.join(data_dir, 'test'), shuffle=False,  # Helps maintain consistency in testing phase
         # **DF['flow_from_dir'])
     )
     test_iter.reset()  # Reset for each model so it's consistent; ideally should reset every epoch
+
+    val_iter = val_gen.flow_from_directory(
+        directory=op.join(data_dir, 'val'), target_size=(256,256), batch_size=4, shuffle=False,  # Helps maintain consistency in testing phase
+        # **DF['flow_from_dir'])
+    )
+    val_iter.reset()
 
     # callbacks_phase1 = [TensorBoard(log_dir=tboard_model_dir, histogram_freq=0,
     #                                 write_grads=False, embeddings_freq=0)]
@@ -228,9 +234,9 @@ def xcept_net(params):
     hist = model.fit(
         #TODO: Auto grab these values...
         train_gen.flow_from_directory(directory=op.join(data_dir, 'train'), target_size=(256,256), batch_size=4, shuffle=True),
-        validation_data=val_gen.flow_from_directory(directory=op.join(data_dir,'val'), target_size=(256,256), batch_size=4, shuffle=True),
+        # validation_data=val_gen.flow_from_directory(directory=op.join(data_dir,'val'), target_size=(256,256), batch_size=4, shuffle=True),
         # batch_size=TP['batch_size'],
-        steps_per_epoch=params['steps_per_train_epo'],
+        # steps_per_epoch=params['steps_per_train_epo'],
         epochs=int(params['n_epo_phase1']),
         callbacks=[tensorboard_callback],
         max_queue_size=params['max_queue_size'],
@@ -242,41 +248,40 @@ def xcept_net(params):
     #TODO: Need to add Validation data.  See https://keras.io/models/model/#fit_generator
     #TODO: Need to update to model.fit().  See https://www.tensorflow.org/api_docs/python/tf/keras/Model#fit
     
-# TURNING OFF SECOND TRAINING FOR NOW...
-    # ###############################################
-    # # Train entire network to fine-tune performance
-    # ###############################################
-    # # Visualize layer names/indices to see how many layers to freeze:
-    # #print('Layer freeze cutoff = {}'.format(params['freeze_cutoff']))
-    # #for li, layer in enumerate(base_model.layers):
-    # #    print(li, layer.name)
-    #
-    # # Set all layers trainable
-    # for layer in model.layers:
-    #     layer.trainable = True
-    #
-    # # Recompile model for second round of training
-    # model.compile(optimizer=get_optimizer(params['optimizer'],
-    #                                       params['lr_phase2']),
-    #               loss=params['loss'],
-    #               metrics=MP['metrics'])
-    #
-    # print('\nPhase 2, training from layer {} on.'.format(params['freeze_cutoff']))
-    # test_iter.reset()  # Reset for each model so it's consistent; ideally should reset every epoch
-    #
-    # hist = model.fit_generator(
-    #     train_gen.flow_from_directory(directory=op.join(data_dir, 'train')),
-    #                                   # **DF['flow_from_dir']),
-    #     steps_per_epoch=params['steps_per_train_epo'],
-    #     epochs=params['n_epo_phase2'],
-    #     max_queue_size=params['max_queue_size'],
-    #     workers=params['workers'],
-    #     use_multiprocessing=params['use_multiprocessing'],
-    #     validation_data=test_iter,
-    #     validation_steps=params['steps_per_test_epo'],
-    #     callbacks=callbacks_phase2,
-    #     class_weight=params['class_weight'],
-    #     verbose=1)
+    ###############################################
+    # Train entire network to fine-tune performance
+    ###############################################
+    # Visualize layer names/indices to see how many layers to freeze:
+    #print('Layer freeze cutoff = {}'.format(params['freeze_cutoff']))
+    #for li, layer in enumerate(base_model.layers):
+    #    print(li, layer.name)
+
+    # Set all layers trainable
+    for layer in model.layers:
+        layer.trainable = True
+
+    # Recompile model for second round of training
+    model.compile(optimizer=get_optimizer(params['optimizer'],
+                                          params['lr_phase2']),
+                  loss=params['loss'],
+                  metrics=MP['metrics'])
+
+    print('\nPhase 2, training from layer {} on.'.format(params['freeze_cutoff']))
+    val_iter.reset()  # Reset for each model so it's consistent; ideally should reset every epoch
+
+    hist = model.fit(
+        train_gen.flow_from_directory(directory=op.join(data_dir, 'train'), target_size=(256,256), batch_size=4, shuffle=True),
+                                      # **DF['flow_from_dir']),
+        # steps_per_epoch=params['steps_per_train_epo'],
+        epochs=params['n_epo_phase2'],
+        max_queue_size=params['max_queue_size'],
+        workers=params['workers'],
+        use_multiprocessing=params['use_multiprocessing'],
+        validation_data=val_iter,
+        # validation_steps=params['steps_per_test_epo'],
+        callbacks=callbacks_phase2,
+        class_weight=params['class_weight'],
+        verbose=1)
 
     # Return best of last validation accuracies
     check_ind = -1 * (TP['early_stopping_patience'] + 1)
@@ -284,6 +289,7 @@ def xcept_net(params):
     #                    status=STATUS_OK)
     result_dict = dict(loss=np.min(hist.history['loss'][check_ind:]),
                        status=STATUS_OK)
+    #TODO: Make changes to ensure that validation loss is the prime value...
 
     return result_dict
 
@@ -344,5 +350,6 @@ if __name__ == '__main__':
     print("Evalutation of best performing model:")
     print(trials.best_trial['result']['loss'])
 
-    with open(op.join(ckpt_dir, 'trials_{}.pkl'.format(start_time)), "wb") as pkl_file:
+    start_string = start_time.strftime("%m-%d-%y_%H-%M-%S")
+    with open(op.join(ckpt_dir, 'trials_{}.pkl'.format(start_string)), "wb") as pkl_file:
         pickle.dump(trials, pkl_file)

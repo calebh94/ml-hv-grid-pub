@@ -68,6 +68,7 @@ def load_model(model_fpath, weights_fpath):
         yaml_architecture = yaml_file.read()
 
     model = model_from_yaml(yaml_architecture)
+    # Issue when using pyyaml 5.3.1, downgrading to 3.13
     model.load_weights(weights_fpath)
 
     return model

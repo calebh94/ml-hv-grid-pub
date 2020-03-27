@@ -11,18 +11,19 @@ from datetime import datetime as dt
 
 import numpy as np
 import tensorflow as tf
-from keras import backend as K
-from keras.applications.xception import preprocess_input as xcept_preproc
-from keras.preprocessing.image import ImageDataGenerator
-from keras.utils import multi_gpu_model
+from tensorflow.keras import backend as K
+from tensorflow.keras.applications.xception import preprocess_input as xcept_preproc
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.utils import multi_gpu_model
 from sklearn.metrics import classification_report
 
 import yaml
 
 from utils import print_start_details, print_end_details, load_model
 from config import (ckpt_dir, data_dir, preds_dir, pred_params as pred_p,
-                    data_flow as DF)
-
+                    train_params as TP
+                    # data_flow as DF)
+                    )
 
 ########################################
 # Calculate number of test images
@@ -31,16 +32,17 @@ test_data_dir = op.join(data_dir, 'test')
 print('Using test images in {}\n'.format(test_data_dir))
 
 total_test_images = 0
-for sub_fold in ['negatives', 'towers', 'substations']:
+# for sub_fold in ['negatives', 'towers', 'substations']:
+for sub_fold in ['Pole', 'Nopole']:
     temp_img_dir = op.join(test_data_dir, sub_fold)
     n_fnames = len([fname for fname in os.listdir(temp_img_dir)
-                    if op.splitext(fname)[1] in ['.png', 'jpg']])
+                    if op.splitext(fname)[1] in ['.png', '.jpg']])
     print('For testing, found {} {} images'.format(n_fnames, sub_fold))
 
     total_test_images += n_fnames
 
 steps_per_test_epo = int(np.ceil(total_test_images /
-                                 DF['flow_from_dir']['batch_size']) + 1)
+                                 TP['batch_size']) + 1)
 
 # Set up generator
 test_gen = ImageDataGenerator(preprocessing_function=xcept_preproc)
@@ -48,8 +50,10 @@ test_gen = ImageDataGenerator(preprocessing_function=xcept_preproc)
 print('\nCreating test generator.')
 test_iter = test_gen.flow_from_directory(directory=test_data_dir,
                                          shuffle=False,
-                                         **DF['flow_from_dir'])
-test_iter.batch_size = 1
+                                         batch_size=1
+                                         # **DF['flow_from_dir'])
+                                         )
+# test_iter.batch_size = 1  # batch size added here
 test_iter.reset()  # Reset for each model to ensure consistency
 
 ####################################
@@ -65,9 +69,10 @@ if pred_p['n_gpus'] > 1:
 else:
     template_model = load_model(op.join(ckpt_dir, pred_p['model_arch_fname']),
                                 op.join(ckpt_dir, pred_p['model_weights_fname']))
+    # template_model = load_model(op.join(ckpt_dir, pred_p['model_weights_fname']))
     parallel_model = template_model
 
-# Turn of training. This is supposed to be faster (haven't seen this empirically though)
+# Turn off training. This is supposed to be faster (haven't seen this empirically though)
 K.set_learning_phase = 0
 for layer in template_model.layers:
     layer.trainable = False
