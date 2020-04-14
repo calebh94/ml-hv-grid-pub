@@ -29,37 +29,134 @@ from config import (ckpt_dir, data_dir, preds_dir, pred_params as pred_p, test_d
 import matplotlib.pyplot as plt
 
 ### Parameters!
-debug = True
+debug = False
 
 ########################################
 # Calculate number of test images
 ########################################
 if debug:
     test_data_dir = op.join(data_dir, 'test_focus')
+    print('Using test images in {}\n'.format(test_data_dir))
 
-print('Using test images in {}\n'.format(test_data_dir))
+    total_test_images = 0
+    # for sub_fold in ['negatives', 'towers', 'substations']:
+    for sub_fold in ['Pole', 'Nopole']:
+        temp_img_dir = op.join(test_data_dir, sub_fold)
+        n_fnames = len([fname for fname in os.listdir(temp_img_dir)
+                        if op.splitext(fname)[1] in ['.png', '.jpg']])
+        print('For testing, found {} {} images'.format(n_fnames, sub_fold))
 
-total_test_images = 0
-# for sub_fold in ['negatives', 'towers', 'substations']:
-for sub_fold in ['Pole', 'Nopole']:
-    temp_img_dir = op.join(test_data_dir, sub_fold)
-    n_fnames = len([fname for fname in os.listdir(temp_img_dir)
-                    if op.splitext(fname)[1] in ['.png', '.jpg']])
-    print('For testing, found {} {} images'.format(n_fnames, sub_fold))
+        total_test_images += n_fnames
 
-    total_test_images += n_fnames
+# steps_per_test_epo = int(np.ceil(total_test_images /
+#                                  TP['batch_size']) + 1)
 
-steps_per_test_epo = int(np.ceil(total_test_images /
-                                 TP['batch_size']) + 1)
+# # Set up generator
+# test_gen = ImageDataGenerator(preprocessing_function=xcept_preproc)
 
-# Set up generator
-test_gen = ImageDataGenerator(preprocessing_function=xcept_preproc)
+# print('\nCreating test generator.')
+# test_iter = test_gen.flow_from_directory(
+#     directory=test_data_dir, target_size=(256, 256), batch_size=1, shuffle=False)
 
-print('\nCreating test generator.')
-test_iter = test_gen.flow_from_directory(
-    directory=test_data_dir, target_size=(256, 256), batch_size=1, shuffle=False)
+# test_iter.reset()  # Reset for each model to ensure consistency
 
-test_iter.reset()  # Reset for each model to ensure consistency
+
+###################################
+# Get the Dataset!
+###################################
+# tfrecord filenames
+tfrecord_test = ['C:\\Users\\harri\\Downloads\\Gabriel_DC_poles_pred_patches_g0.tfrecord.gz']
+
+# Define variables needed for functions
+opticalBands = ['b1', 'b2', 'b3']
+BANDS = opticalBands
+RESPONSE = 'pole'
+FEATURES = BANDS + [RESPONSE]
+KERNEL_SIZE = 256
+KERNEL_SHAPE = [KERNEL_SIZE, KERNEL_SIZE]
+COLUMNS = [
+    tf.io.FixedLenFeature(shape=KERNEL_SHAPE, dtype=tf.float32) for k in FEATURES
+]
+FEATURES_DICT = dict(zip(FEATURES, COLUMNS))
+
+# Parameters to define
+BATCH_SIZE = 16
+BUFFER_SIZE = 0
+TEST_SIZE = 2000
+
+
+# Define functions from EE examples
+def parse_tfrecord(example_proto):
+    """The parsing function.
+    Read a serialized example into the structure defined by FEATURES_DICT.
+    Args:
+      example_proto: a serialized Example.
+    Returns:
+      A dictionary of tensors, keyed by feature name.
+    """
+    return tf.io.parse_single_example(example_proto, FEATURES_DICT)
+
+
+def to_tuple(inputs):
+    """Function to convert a dictionary of tensors to a tuple of (inputs, outputs).
+    Turn the tensors returned by parse_tfrecord into a stack in HWC shape.
+    Args:
+      inputs: A dictionary of tensors, keyed by feature name.
+    Returns:
+      A dtuple of (inputs, outputs).
+    """
+    inputsList = [inputs.get(key) for key in FEATURES]
+    stacked = tf.stack(inputsList, axis=0)
+    # Convert from CHW to HWC
+    stacked = tf.transpose(stacked, [1, 2, 0])
+    return stacked[:, :, :len(BANDS)], stacked[:, :, len(BANDS):]
+
+
+def to_tuple_tile_classification(inputs):
+    """Function to convert a dictionary of tensors to a tuple of (inputs, outputs).
+    Turn the tensors returned by parse_tfrecord into a stack in HWC shape.
+    Args:
+      inputs: A dictionary of tensors, keyed by feature name.
+    Returns:
+      A dtuple of (inputs, outputs).
+    """
+    inputsList = [inputs.get(key) for key in FEATURES]
+    stacked = tf.stack(inputsList, axis=0)
+    # Convert from CHW to HWC
+    stacked = tf.transpose(stacked, [1, 2, 0])
+
+    # return stacked[:,:,:len(BANDS)], stacked[:,:,len(BANDS):]
+    return stacked[:, :, :len(BANDS)], [tf.reduce_max(stacked[:, :, len(BANDS):])]
+
+
+def get_dataset(files):
+    """Function to read, parse and format to tuple a set of input tfrecord files.
+    Get all the files matching the pattern, parse and convert to tuple.
+    Args:
+      pattern: A file pattern to match in a Cloud Storage bucket.
+    Returns:
+      A tf.data.Dataset
+    """
+    # glob = tf.gfile.Glob(pattern)
+    dataset = tf.data.TFRecordDataset(files, compression_type='GZIP')
+    dataset = dataset.map(parse_tfrecord, num_parallel_calls=5)
+    # test = to_tuple_tile_classification(dataset.take(1))
+    dataset = dataset.map(to_tuple_tile_classification, num_parallel_calls=5)
+    return dataset
+
+
+def get_training_dataset(files):
+    """Get the preprocessed training dataset
+  Returns:
+    A tf.data.Dataset of training data.
+  """
+    # glob = 'gs://' + BUCKET + '/' + FOLDER + '/' + TRAINING_BASE + '*'
+    dataset = get_dataset(files)
+    dataset = dataset.batch(BATCH_SIZE).repeat()
+    return dataset
+
+
+testing_dataset = get_training_dataset(tfrecord_test)
 
 ####################################
 # Load model and params
@@ -96,8 +193,8 @@ print('\nPredicting.')
 start_time = dt.now()
 print('Start time: ' + start_time.strftime('%d/%m %H:%M:%S'))
 
-y_true = test_iter.classes
-class_labels = list(test_iter.class_indices.keys())
+# y_true = test_iter.classes
+# class_labels = list(test_iter.class_indices.keys())
 
 # # Leave steps=None to predict entire sequence
 # y_pred_probs = parallel_model.predict_generator(test_iter,
@@ -109,9 +206,9 @@ class_labels = list(test_iter.class_indices.keys())
 if debug:
     des_test = 25 # make number with square root as int
 else:
-    des_test = total_test_images
+    des_test = TEST_SIZE
 
-y_pred_probs = parallel_model.predict(test_iter,
+y_pred_probs = parallel_model.predict(testing_dataset,
                                                 steps=des_test,
                                                 workers=1,
                                                 verbose=1)

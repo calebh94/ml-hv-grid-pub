@@ -13,7 +13,7 @@ import pickle
 import pprint
 import numpy as np
 
-# import tensorflow as tf
+import tensorflow as tf
 
 from tensorflow.keras import backend as K
 from tensorflow.keras.models import Model
@@ -120,10 +120,10 @@ def xcept_net(params):
 
     print('Creating validation generator.')
 
-    val_iter = val_gen.flow_from_directory(
-        directory=op.join(data_dir, 'val'), target_size=TP['img_size'][0:2], batch_size=TP['batch_size'], shuffle=False,  # Helps maintain consistency in testing phase
-    )
-    val_iter.reset()
+    # val_iter = val_gen.flow_from_directory(
+    #     directory=op.join(data_dir, 'val'), target_size=TP['img_size'][0:2], batch_size=TP['batch_size'], shuffle=False,  # Helps maintain consistency in testing phase
+    # )
+    # val_iter.reset()
 
     callbacks_phase1 = [TensorBoard(log_dir=tboard_model_dir, histogram_freq=0,
                                     write_grads=False, embeddings_freq=0,
@@ -212,8 +212,10 @@ def xcept_net(params):
     # params['batch_size'] = TP['batch_size']
 
     hist = model.fit(
-        train_gen.flow_from_directory(directory=op.join(data_dir, 'train'), target_size=TP['img_size'][0:2], batch_size=TP['batch_size'], shuffle=True),
-        # steps_per_epoch=params['steps_per_train_epo'],
+        # train_gen.flow_from_directory(directory=op.join(data_dir, 'train'), target_size=TP['img_size'][0:2], batch_size=TP['batch_size'], shuffle=True),
+        x=training_dataset,
+        steps_per_epoch=int(TRAIN_SIZE / BATCH_SIZE),  #TODO: Need to check to make sure batching correcty...
+        #TODO: otherwise, the entire dataset is not being used
         epochs=int(params['n_epo_phase1']),
         callbacks=callbacks_phase1,
         max_queue_size=MP['max_queue_size'],
@@ -242,17 +244,17 @@ def xcept_net(params):
                   metrics=MP['metrics'])
 
     print('\nPhase 2, training from layer {} on.'.format(params['freeze_cutoff']))
-    val_iter.reset()  # Reset for each model so it's consistent; ideally should reset every epoch
+    # val_iter.reset()  # Reset for each model so it's consistent; ideally should reset every epoch
 
     hist = model.fit(
-        train_gen.flow_from_directory(directory=op.join(data_dir, 'train'), target_size=TP['img_size'][0:2], batch_size=TP['batch_size'], shuffle=True),
-        # steps_per_epoch=params['steps_per_train_epo'],
+        x=training_dataset,
+        steps_per_epoch=int(TRAIN_SIZE / BATCH_SIZE),
         epochs=int(params['n_epo_phase2']),
         max_queue_size=MP['max_queue_size'],
         workers=MP['workers'],
         use_multiprocessing=MP['use_multiprocessing'],
-        validation_data=val_iter,
-        # validation_steps=params['steps_per_test_epo'],
+        validation_data=eval_dataset,
+        validation_steps=EVAL_SIZE,
         callbacks=callbacks_phase2,
         class_weight=TP['class_weight'],
         verbose=1)
@@ -272,25 +274,25 @@ if __name__ == '__main__':
     start_time = dt.now()
     print_start_details(start_time)
 
-    ###################################
-    # Calculate number of train/test images
-    ###################################
-    total_test_images = 0
-    total_train_images = 0
-    # Print out how many images are available for train/test
-    # for fold in ['train', 'test']:
-    for fold in ['train','val','test']:
-        # for sub_fold in ['negatives', 'towers', 'substations']:
-        for sub_fold in ['Pole', 'Nopole']:
-            temp_img_dir = op.join(data_dir, fold, sub_fold)
-            n_fnames = len([fname for fname in os.listdir(temp_img_dir)
-                            if op.splitext(fname)[1] in ['.png', '.jpg']])
-            print('For {}ing, found {} {} images'.format(fold, n_fnames, sub_fold))
-
-            if fold == 'test':
-                total_test_images += n_fnames
-            elif fold == 'train':
-                total_train_images += n_fnames
+    # ###################################
+    # # Calculate number of train/test images
+    # ###################################
+    # total_test_images = 0
+    # total_train_images = 0
+    # # Print out how many images are available for train/test
+    # # for fold in ['train', 'test']:
+    # for fold in ['train','val','test']:
+    #     # for sub_fold in ['negatives', 'towers', 'substations']:
+    #     for sub_fold in ['Pole', 'Nopole']:
+    #         temp_img_dir = op.join(data_dir, fold, sub_fold)
+    #         n_fnames = len([fname for fname in os.listdir(temp_img_dir)
+    #                         if op.splitext(fname)[1] in ['.png', '.jpg']])
+    #         print('For {}ing, found {} {} images'.format(fold, n_fnames, sub_fold))
+    #
+    #         if fold == 'test':
+    #             total_test_images += n_fnames
+    #         elif fold == 'train':
+    #             total_train_images += n_fnames
     # if TP['steps_per_test_epo'] is None:
     #     TP['steps_per_test_epo'] = int(np.ceil(total_test_images /
     #                                            DF['flow_from_dir']['batch_size']) + 1)
@@ -310,6 +312,141 @@ if __name__ == '__main__':
 
     val_gen = ImageDataGenerator(preprocessing_function=xcept_preproc)
 
+    ###################################
+    # Get the Dataset!
+    ###################################
+    # tfrecord filenames
+    tfrecord_train = ['C:\\Users\\harri\\Downloads\\Gabriel_DC_poles_training_patches_g0.tfrecord.gz']
+    tfrecord_eval = ['C:\\Users\\harri\\Downloads\\Gabriel_DC_poles_eval_patches_g0.tfrecord.gz']
+
+    # Define variables needed for functions
+    opticalBands = ['b1', 'b2', 'b3']
+    BANDS = opticalBands
+    RESPONSE = 'pole'
+    FEATURES = BANDS + [RESPONSE]
+    KERNEL_SIZE = 256
+    KERNEL_SHAPE = [KERNEL_SIZE, KERNEL_SIZE]
+    COLUMNS = [
+        tf.io.FixedLenFeature(shape=KERNEL_SHAPE, dtype=tf.float32) for k in FEATURES
+    ]
+    FEATURES_DICT = dict(zip(FEATURES, COLUMNS))
+
+    # Parameters to define
+    BATCH_SIZE = TP['batch_size']
+    BUFFER_SIZE = 0
+    TRAIN_SIZE = 2500  ##############
+    EVAL_SIZE = 1600  ##############
+
+
+    # Define functions from EE examples
+    def parse_tfrecord(example_proto):
+        """The parsing function.
+        Read a serialized example into the structure defined by FEATURES_DICT.
+        Args:
+          example_proto: a serialized Example.
+        Returns:
+          A dictionary of tensors, keyed by feature name.
+        """
+        return tf.io.parse_single_example(example_proto, FEATURES_DICT)
+
+
+    def to_tuple(inputs):
+        """Function to convert a dictionary of tensors to a tuple of (inputs, outputs).
+        Turn the tensors returned by parse_tfrecord into a stack in HWC shape.
+        Args:
+          inputs: A dictionary of tensors, keyed by feature name.
+        Returns:
+          A dtuple of (inputs, outputs).
+        """
+        inputsList = [inputs.get(key) for key in FEATURES]
+        stacked = tf.stack(inputsList, axis=0)
+        # Convert from CHW to HWC
+        stacked = tf.transpose(stacked, [1, 2, 0])
+        return stacked[:, :, :len(BANDS)], stacked[:, :, len(BANDS):]
+
+
+    def to_tuple_tile_classification(inputs):
+        """Function to convert a dictionary of tensors to a tuple of (inputs, outputs).
+        Turn the tensors returned by parse_tfrecord into a stack in HWC shape.
+        Args:
+          inputs: A dictionary of tensors, keyed by feature name.
+        Returns:
+          A dtuple of (inputs, outputs).
+        """
+        inputsList = [inputs.get(key) for key in FEATURES]
+        stacked = tf.stack(inputsList, axis=0)
+        # Convert from CHW to HWC
+        stacked = tf.transpose(stacked, [1, 2, 0])
+
+        # Hot encode the labels
+        label = tf.reduce_max(stacked[:, :, len(BANDS):])
+        indices = [0, 1]
+        depth = 2
+        labels = tf.one_hot(indices, depth)[int(label)]
+        # Scale image data to between -1 and 1
+        imgs = stacked[:, :, :len(BANDS)]
+        imgs /= 127.5
+        imgs -= 1.
+        # return stacked[:,:,:len(BANDS)], stacked[:,:,len(BANDS):]
+        # return stacked[:, :, :len(BANDS)], [tf.reduce_max(stacked[:, :, len(BANDS):])]
+        return imgs, labels
+
+    def get_dataset_orig(files):
+        """Function to read, parse and format to tuple a set of input tfrecord files.
+        Get all the files matching the pattern, parse and convert to tuple.
+        Args:
+          pattern: A file pattern to match in a Cloud Storage bucket.
+        Returns:
+          A tf.data.Dataset
+        """
+        # glob = tf.gfile.Glob(pattern)
+        dataset = tf.data.TFRecordDataset(files, compression_type='GZIP')
+        dataset = dataset.map(parse_tfrecord, num_parallel_calls=5)
+        # test = to_tuple_tile_classification(dataset.take(1))
+        dataset = dataset.map(to_tuple, num_parallel_calls=5)
+        return dataset
+
+
+    def get_dataset(files):
+        """Function to read, parse and format to tuple a set of input tfrecord files.
+        Get all the files matching the pattern, parse and convert to tuple.
+        Args:
+          pattern: A file pattern to match in a Cloud Storage bucket.
+        Returns:
+          A tf.data.Dataset
+        """
+        # glob = tf.gfile.Glob(pattern)
+        dataset = tf.data.TFRecordDataset(files, compression_type='GZIP')
+        dataset = dataset.map(parse_tfrecord, num_parallel_calls=5)
+        # test = to_tuple_tile_classification(dataset.take(1))
+        dataset = dataset.map(to_tuple_tile_classification, num_parallel_calls=5)
+        return dataset
+
+    def get_training_dataset_orig(files):
+        """Get the preprocessed training dataset
+      Returns:
+        A tf.data.Dataset of training data.
+      """
+        # glob = 'gs://' + BUCKET + '/' + FOLDER + '/' + TRAINING_BASE + '*'
+        dataset = get_dataset_orig(files)
+        dataset = dataset.batch(BATCH_SIZE).repeat()
+        return dataset
+
+    def get_training_dataset(files):
+        """Get the preprocessed training dataset
+      Returns:
+        A tf.data.Dataset of training data.
+      """
+        # glob = 'gs://' + BUCKET + '/' + FOLDER + '/' + TRAINING_BASE + '*'
+        dataset = get_dataset(files)
+        dataset = dataset.batch(BATCH_SIZE).repeat()
+        return dataset
+
+
+    # training_dataset_orig = get_training_dataset_orig(tfrecord_train)
+
+    training_dataset = get_training_dataset(tfrecord_train)
+    eval_dataset = get_training_dataset(tfrecord_eval)
 
     ############################################################
     # Run training with hyperparam optimization (using hyperopt)
