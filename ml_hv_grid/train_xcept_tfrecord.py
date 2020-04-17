@@ -12,6 +12,8 @@ from datetime import datetime as dt
 import pickle
 import pprint
 import numpy as np
+from matplotlib import pyplot as plt
+from scipy import stats
 
 import tensorflow as tf
 
@@ -265,7 +267,6 @@ def xcept_net(params):
     #                    status=STATUS_OK)
     result_dict = dict(loss=np.min(hist.history['val_loss'][check_ind:]),
                        status=STATUS_OK)
-    #TODO: Make changes to ensure that validation loss is the prime value...
 
     return result_dict
 
@@ -316,8 +317,8 @@ if __name__ == '__main__':
     # Get the Dataset!
     ###################################
     # tfrecord filenames
-    tfrecord_train = ['C:\\Users\\harri\\Downloads\\Gabriel_DC_poles_training_patches_g0.tfrecord.gz']
-    tfrecord_eval = ['C:\\Users\\harri\\Downloads\\Gabriel_DC_poles_eval_patches_g0.tfrecord.gz']
+    tfrecord_train = ['C:\\Users\\harri\\git\\wirestrike-cable-prediction\\imgs\\tfrecord\\Gabriel_DC_poles_training_patches_g0.tfrecord.gz']
+    tfrecord_eval = ['C:\\Users\\harri\\git\\wirestrike-cable-prediction\\imgs\\tfrecord\\Gabriel_DC_poles_eval_patches_g0.tfrecord.gz']
 
     # Define variables needed for functions
     opticalBands = ['b1', 'b2', 'b3']
@@ -334,8 +335,9 @@ if __name__ == '__main__':
     # Parameters to define
     BATCH_SIZE = TP['batch_size']
     BUFFER_SIZE = 0
-    TRAIN_SIZE = 2500  ##############
-    EVAL_SIZE = 1600  ##############
+    # Sizes of the training and evaluation datasets.
+    TRAIN_SIZE = 70000  ##############
+    EVAL_SIZE = 16000  ##############
 
 
     # Define functions from EE examples
@@ -379,10 +381,12 @@ if __name__ == '__main__':
         stacked = tf.transpose(stacked, [1, 2, 0])
 
         # Hot encode the labels
-        label = tf.reduce_max(stacked[:, :, len(BANDS):])
+        label = tf.reduce_sum(stacked[:, :, len(BANDS):]) / tf.cast(tf.size(stacked[:, :, len(BANDS):]), tf.float32)
+        # label = tf.reduce_max(stacked[:, :, len(BANDS):])
         indices = [0, 1]
         depth = 2
-        labels = tf.one_hot(indices, depth)[int(label)]
+        labels = tf.one_hot(indices, depth)[int(label+0.4)]
+        labels = tf.dtypes.cast(labels, tf.int32)
         # Scale image data to between -1 and 1
         imgs = stacked[:, :, :len(BANDS)]
         imgs /= 127.5
@@ -390,6 +394,38 @@ if __name__ == '__main__':
         # return stacked[:,:,:len(BANDS)], stacked[:,:,len(BANDS):]
         # return stacked[:, :, :len(BANDS)], [tf.reduce_max(stacked[:, :, len(BANDS):])]
         return imgs, labels
+
+
+    def to_tuple_tile_classification_multi(inputs):
+        """Function to convert a dictionary of tensors to a tuple of (inputs, outputs).
+        Turn the tensors returned by parse_tfrecord into a stack in HWC shape.
+        Args:
+          inputs: A dictionary of tensors, keyed by feature name.
+        Returns:
+          A dtuple of (inputs, outputs).
+        """
+        inputsList = [inputs.get(key) for key in FEATURES]
+        stacked = tf.stack(inputsList, axis=0)
+        # Convert from CHW to HWC
+        stacked = tf.transpose(stacked, [1, 2, 0])
+
+        # Hot encode the labels
+        # label = tf.reduce_mean(stacked[:, :, len(BANDS):]) / 25
+        label = tf.reduce_max(stacked[:, :, len(BANDS):]) / 25
+        # label = tf.reduce_sum(stacked[:, :, len(BANDS):]) / tf.cast(tf.size(stacked[:, :, len(BANDS):]), tf.float32)
+        # label = tf.reduce_max(stacked[:, :, len(BANDS):])
+        indices = [0, 1, 2, 3, 4]
+        depth = 5
+        labels = tf.one_hot(indices, depth)[int(label)]
+        labels = tf.dtypes.cast(labels, tf.int32)
+        # Scale image data to between -1 and 1
+        imgs = stacked[:, :, :len(BANDS)]
+        imgs /= 127.5
+        imgs -= 1.
+        # return stacked[:,:,:len(BANDS)], stacked[:,:,len(BANDS):]
+        # return stacked[:, :, :len(BANDS)], [tf.reduce_max(stacked[:, :, len(BANDS):])]
+        return imgs, labels
+
 
     def get_dataset_orig(files):
         """Function to read, parse and format to tuple a set of input tfrecord files.
@@ -419,7 +455,7 @@ if __name__ == '__main__':
         dataset = tf.data.TFRecordDataset(files, compression_type='GZIP')
         dataset = dataset.map(parse_tfrecord, num_parallel_calls=5)
         # test = to_tuple_tile_classification(dataset.take(1))
-        dataset = dataset.map(to_tuple_tile_classification, num_parallel_calls=5)
+        dataset = dataset.map(to_tuple_tile_classification_multi, num_parallel_calls=5)
         return dataset
 
     def get_training_dataset_orig(files):
@@ -442,11 +478,92 @@ if __name__ == '__main__':
         dataset = dataset.batch(BATCH_SIZE).repeat()
         return dataset
 
-
-    # training_dataset_orig = get_training_dataset_orig(tfrecord_train)
-
     training_dataset = get_training_dataset(tfrecord_train)
     eval_dataset = get_training_dataset(tfrecord_eval)
+
+
+
+    debug = False
+    if debug:
+        # count first 500
+        numcnt = TRAIN_SIZE
+        polecount = 0
+        for img, lbl in training_dataset.take(int(numcnt / BATCH_SIZE)):
+            polecount = polecount + lbl.numpy()[:, 1].sum()
+        # training_dataset_orig = get_training_dataset_orig(tfrecord_train)
+
+        def plot_image(i, true_label, img):
+            true_label, img = true_label[i], img[i]
+            plt.grid(False)
+            plt.xticks([])
+            plt.yticks([])
+            # fix image!
+
+            img = img.squeeze()
+            img = (img + 1) * 127.5
+            img = img.astype(int)
+            plt.imshow(img, cmap=plt.cm.binary)
+
+            # predicted_label = np.argmax(predictions_array)
+            if true_label == 0:
+                color = 'blue'
+            else:
+                color = 'red'
+
+            plt.xlabel("{}".format(true_label),
+                       color=color)
+
+
+        # def plot_value_array(i, predictions_array, true_label):
+        #     predictions_array, true_label = predictions_array, true_label[i]
+        #     plt.grid(False)
+        #     plt.xticks(range(2))
+        #     plt.yticks([])
+        #     thisplot = plt.bar(range(2), predictions_array, color="#777777")
+        #     plt.ylim([0, 1])
+        #     predicted_label = np.argmax(predictions_array)
+        #
+        #     thisplot[predicted_label].set_color('red')
+        #     thisplot[true_label].set_color('blue')
+
+
+        # Plot the first X test images, their predicted labels, and the true labels.
+        # Color correct predictions in blue and incorrect predictions in red.
+        num_rows = 4
+        num_cols = 4
+        num_images = num_rows * num_cols
+        plt.figure(figsize=(2 * 2 * num_cols, 2 * num_rows))
+
+        img_array = []
+        label_array = []
+        cnt = 0
+        for img, lbl in training_dataset:
+            label = lbl.numpy().nonzero()[1]
+            for ind in range(0,label.size):
+                if label[ind] == 1:
+                    img_array.append(img[ind].numpy())
+                    cnt = cnt + 1
+                    label_array.append(label[ind])
+                    if cnt >= num_images:
+                        break
+                if cnt >= num_images:
+                    break
+            if cnt >= num_images:
+                break
+
+        for i in range(num_images):
+            plt.subplot(num_rows, 2 * num_cols, 2 * i + 1)
+            # if i < 8:
+            #     plot_image(i, label_array[0], img_array[0])
+            # else:
+            #     plot_image(i-8, label_array[1], img_array[1])
+            plot_image(i, label_array, img_array)
+
+            # plt.subplot(num_rows, 2 * num_cols, 2 * i + 2)
+            # plot_value_array(i,, y_true)
+        plt.tight_layout()
+        plt.show()
+
 
     ############################################################
     # Run training with hyperparam optimization (using hyperopt)

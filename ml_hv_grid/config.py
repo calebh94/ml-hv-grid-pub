@@ -32,14 +32,15 @@ if not op.isdir(tboard_dir):
     os.mkdir(tboard_dir)
 
 # Model parameters modified for TF 2.0, and to remove unneccessary selections
-model_params = dict(loss=['binary_crossentropy'],
+model_params = dict(loss=['categorical_crossentropy'],
+                    # loss=['binary_crossentropy'],
                     optimizer=[dict(opt_func='adam'),
                                dict(opt_func='rmsprop')],
                     lr_phase1=[1e-4, 1e-3],  # learning rate for phase 1 (output layer only)
                     lr_phase2=[1e-5, 5e-4],  # learning rate for phase 2 (all layers beyond freeze_cutoff)
                     weight_init=['glorot_uniform'],
-                    # metrics=['accuracy'],
-                    metrics=['binary_accuracy'], # Using binary accuracy while there is a binary classification (better)
+                    metrics=['accuracy'],
+                    # metrics=['binary_accuracy'], # Using binary accuracy while there is a binary classification (better)
                     # https://www.tensorflow.org/api_docs/python/tf/keras/metrics/BinaryAccuracy
                     # Blocks organized in 10s, 66, 76, 86, etc.
                     freeze_cutoff=[0],  # Layer below which no training/updating occurs on weights
@@ -51,29 +52,33 @@ model_params = dict(loss=['binary_crossentropy'],
                     use_multiprocessing=False)
 
 
-train_params = dict(n_rand_hp_iters=3,
-                    n_total_hp_iters=3,
+train_params = dict(n_rand_hp_iters=1,
+                    n_total_hp_iters=1,
                     n_epo_phase1=[2, 4],  # number of epochs training only top layer
-                    n_epo_phase2=[8, 14],  # number of epochs fine tuning whole model
-                    batch_size=16,  # Want as large as GPU can handle, using batch-norm layers
+                    # n_epo_phase2=[8, 14],  # number of epochs fine tuning whole model
+                    n_epo_phase2=[1, 4],  # number of epochs fine tuning whole model
+                    batch_size=8,  # Want as large as GPU can handle, using batch-norm layers
                     prop_total_img_set=1.0,  # Proportion of total images per train epoch
                     img_size=(256, 256, 3),
-                    early_stopping_patience=8,  # Number of iters w/out val_acc increase
-                    early_stopping_min_delta=0.005,
+                    early_stopping_patience=5,  # Number of iters w/out val_acc increase
+                    early_stopping_min_delta=0.01,
                     reduce_lr_patience=3,  # Number of iters w/out val_acc increase
                     reduce_lr_epsilon=0.01,
-                    n_classes=2,
-                    class_weight={0: 0.63, 1: 2.48},
+                    # n_classes=2,
+                    n_classes=5,
+                    # class_weight={0: 0.63, 1: 2.48},  # flow from directory dataset
+                    # class_weight={0: 0.50, 1: 10.00},  # tfrecord dataset
+                    class_weight={0: 0.50, 1: 1.00, 2: 5.00, 3: 3.00, 4: 10.00},  # tfrecord dataset
                     # https://www.tensorflow.org/tutorials/structured_data/imbalanced_data#class_weights
                     shuffle_seed=42)  # Seed for random number generator
 
-pred_params = dict(model_time='0413_183022',
+pred_params = dict(model_time='0410_145933',
                    single_batch_size=4,  # Number of images seen by a single GPU
                    n_gpus=1,
                    deci_prec=4)  # Number of decimal places in prediction precision
 pred_params.update(dict(model_arch_fname='{}_arch.yaml'.format(pred_params['model_time']),
                         model_params_fname='{}_params.yaml'.format(pred_params['model_time']),
-                        model_weights_fname='{}_L4.35_E09_weights.h5'.format(pred_params['model_time'])))
+                        model_weights_fname='{}_L0.76_E11_weights.h5'.format(pred_params['model_time'])))
 
 # Removed download parameters since not using AWS dataset (maybe in future?)
 

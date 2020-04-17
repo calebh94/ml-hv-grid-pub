@@ -125,9 +125,18 @@ def to_tuple_tile_classification(inputs):
     # Convert from CHW to HWC
     stacked = tf.transpose(stacked, [1, 2, 0])
 
+    # Hot encode the labels
+    label = tf.reduce_max(stacked[:, :, len(BANDS):])
+    indices = [0, 1]
+    depth = 2
+    labels = tf.one_hot(indices, depth)[int(label)]
+    # Scale image data to between -1 and 1
+    imgs = stacked[:, :, :len(BANDS)]
+    imgs /= 127.5
+    imgs -= 1.
     # return stacked[:,:,:len(BANDS)], stacked[:,:,len(BANDS):]
-    return stacked[:, :, :len(BANDS)], [tf.reduce_max(stacked[:, :, len(BANDS):])]
-
+    # return stacked[:, :, :len(BANDS)], [tf.reduce_max(stacked[:, :, len(BANDS):])]
+    return imgs, labels
 
 def get_dataset(files):
     """Function to read, parse and format to tuple a set of input tfrecord files.
@@ -207,6 +216,15 @@ if debug:
     des_test = 25 # make number with square root as int
 else:
     des_test = TEST_SIZE
+
+cnt = 0
+y_true = []
+for img, lbl in testing_dataset:
+    if cnt >= des_test:
+        break
+    else:
+        y_true.append(lbl)
+        cnt=cnt+1
 
 y_pred_probs = parallel_model.predict(testing_dataset,
                                                 steps=des_test,
