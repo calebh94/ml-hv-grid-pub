@@ -216,8 +216,7 @@ def xcept_net(params):
     hist = model.fit(
         # train_gen.flow_from_directory(directory=op.join(data_dir, 'train'), target_size=TP['img_size'][0:2], batch_size=TP['batch_size'], shuffle=True),
         x=training_dataset,
-        steps_per_epoch=int(TRAIN_SIZE / BATCH_SIZE),  #TODO: Need to check to make sure batching correcty...
-        #TODO: otherwise, the entire dataset is not being used
+        steps_per_epoch=int(TRAIN_SIZE * (TF_FILES_TRAIN / TRAIN_FILES) / BATCH_SIZE * TP['prop_total_img_set']),
         epochs=int(params['n_epo_phase1']),
         callbacks=callbacks_phase1,
         max_queue_size=MP['max_queue_size'],
@@ -250,13 +249,13 @@ def xcept_net(params):
 
     hist = model.fit(
         x=training_dataset,
-        steps_per_epoch=int(TRAIN_SIZE / BATCH_SIZE),
+        steps_per_epoch=int(TRAIN_SIZE * (TF_FILES_TRAIN / TRAIN_FILES) / BATCH_SIZE * TP['prop_total_img_set']),
         epochs=int(params['n_epo_phase2']),
         max_queue_size=MP['max_queue_size'],
         workers=MP['workers'],
         use_multiprocessing=MP['use_multiprocessing'],
         validation_data=eval_dataset,
-        validation_steps=EVAL_SIZE,
+        validation_steps=int(EVAL_SIZE * (TF_FILES_EVAL / EVAL_SIZE)/ BATCH_SIZE * TP['prop_total_img_set']),
         callbacks=callbacks_phase2,
         class_weight=TP['class_weight'],
         verbose=1)
@@ -317,7 +316,9 @@ if __name__ == '__main__':
     # Get the Dataset!
     ###################################
     # tfrecord filenames
-    tfrecord_train = ['C:\\Users\\harri\\git\\wirestrike-cable-prediction\\imgs\\tfrecord\\Gabriel_DC_poles_training_patches_g0.tfrecord.gz']
+    tfrecord_train = ['C:\\Users\\harri\\git\\wirestrike-cable-prediction\\imgs\\tfrecord\\Gabriel_DC_poles_training_patches_g0.tfrecord.gz',
+                      'C:\\Users\\harri\\git\\wirestrike-cable-prediction\\imgs\\tfrecord\\Gabriel_DC_poles_training_patches_g1.tfrecord.gz',
+                      'C:\\Users\\harri\\git\\wirestrike-cable-prediction\\imgs\\tfrecord\\Gabriel_DC_poles_training_patches_g2.tfrecord.gz']
     tfrecord_eval = ['C:\\Users\\harri\\git\\wirestrike-cable-prediction\\imgs\\tfrecord\\Gabriel_DC_poles_eval_patches_g0.tfrecord.gz']
 
     # Define variables needed for functions
@@ -336,8 +337,12 @@ if __name__ == '__main__':
     BATCH_SIZE = TP['batch_size']
     BUFFER_SIZE = 0
     # Sizes of the training and evaluation datasets.
-    TRAIN_SIZE = 70000  ##############
-    EVAL_SIZE = 16000  ##############
+    TRAIN_SIZE = 70000  ##############  FOR __ FILES
+    TRAIN_FILES = 35
+    TF_FILES_TRAIN = len(tfrecord_train)
+    EVAL_SIZE = 16000  ##############   FOR __ FILES
+    EVAL_FILES = 8
+    TF_FILES_EVAL = len(tfrecord_eval)
 
 
     # Define functions from EE examples
@@ -410,8 +415,11 @@ if __name__ == '__main__':
         stacked = tf.transpose(stacked, [1, 2, 0])
 
         # Hot encode the labels
+        label_vector = tf.reshape(stacked[:, :, len(BANDS):] / 25, [-1])
+        label_counts = tf.math.bincount(tf.cast(label_vector, tf.int32))
+        label = tf.argmax(label_counts)
         # label = tf.reduce_mean(stacked[:, :, len(BANDS):]) / 25
-        label = tf.reduce_max(stacked[:, :, len(BANDS):]) / 25
+        # label = tf.reduce_max(stacked[:, :, len(BANDS):]) / 25
         # label = tf.reduce_sum(stacked[:, :, len(BANDS):]) / tf.cast(tf.size(stacked[:, :, len(BANDS):]), tf.float32)
         # label = tf.reduce_max(stacked[:, :, len(BANDS):])
         indices = [0, 1, 2, 3, 4]
@@ -485,11 +493,10 @@ if __name__ == '__main__':
 
     debug = False
     if debug:
-        # count first 500
         numcnt = TRAIN_SIZE
         polecount = 0
-        for img, lbl in training_dataset.take(int(numcnt / BATCH_SIZE)):
-            polecount = polecount + lbl.numpy()[:, 1].sum()
+        # for img, lbl in training_dataset.take(int(numcnt / BATCH_SIZE)):
+        #     polecount = polecount + lbl.numpy()[:, 1].sum()
         # training_dataset_orig = get_training_dataset_orig(tfrecord_train)
 
         def plot_image(i, true_label, img):
@@ -540,7 +547,7 @@ if __name__ == '__main__':
         for img, lbl in training_dataset:
             label = lbl.numpy().nonzero()[1]
             for ind in range(0,label.size):
-                if label[ind] == 1:
+                if label[ind] > 3:
                     img_array.append(img[ind].numpy())
                     cnt = cnt + 1
                     label_array.append(label[ind])

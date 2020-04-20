@@ -52,23 +52,24 @@ model_params = dict(loss=['categorical_crossentropy'],
                     use_multiprocessing=False)
 
 
-train_params = dict(n_rand_hp_iters=1,
-                    n_total_hp_iters=1,
+train_params = dict(n_rand_hp_iters=3,
+                    n_total_hp_iters=3,
                     n_epo_phase1=[2, 4],  # number of epochs training only top layer
-                    # n_epo_phase2=[8, 14],  # number of epochs fine tuning whole model
-                    n_epo_phase2=[1, 4],  # number of epochs fine tuning whole model
+                    # n_epo_phase1=[1, 4],  # number of epochs training only top layer
+                    n_epo_phase2=[8, 14],  # number of epochs fine tuning whole model
+                    # n_epo_phase2=[4, 8],  # number of epochs fine tuning whole model
                     batch_size=8,  # Want as large as GPU can handle, using batch-norm layers
                     prop_total_img_set=1.0,  # Proportion of total images per train epoch
                     img_size=(256, 256, 3),
-                    early_stopping_patience=5,  # Number of iters w/out val_acc increase
+                    early_stopping_patience=4,  # Number of iters w/out val_acc increase
                     early_stopping_min_delta=0.01,
-                    reduce_lr_patience=3,  # Number of iters w/out val_acc increase
+                    reduce_lr_patience=2,  # Number of iters w/out val_acc increase
                     reduce_lr_epsilon=0.01,
                     # n_classes=2,
                     n_classes=5,
                     # class_weight={0: 0.63, 1: 2.48},  # flow from directory dataset
                     # class_weight={0: 0.50, 1: 10.00},  # tfrecord dataset
-                    class_weight={0: 0.50, 1: 1.00, 2: 5.00, 3: 3.00, 4: 10.00},  # tfrecord dataset
+                    class_weight={0: 0.50, 1: 1.00, 2: 5.00, 3: 3.00, 4: 20.00},  # tfrecord dataset
                     # https://www.tensorflow.org/tutorials/structured_data/imbalanced_data#class_weights
                     shuffle_seed=42)  # Seed for random number generator
 
