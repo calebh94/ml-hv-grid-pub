@@ -73,13 +73,13 @@ train_params = dict(n_rand_hp_iters=3,
                     # https://www.tensorflow.org/tutorials/structured_data/imbalanced_data#class_weights
                     shuffle_seed=42)  # Seed for random number generator
 
-pred_params = dict(model_time='0410_145933',
+pred_params = dict(model_time='0420_192732',
                    single_batch_size=4,  # Number of images seen by a single GPU
                    n_gpus=1,
                    deci_prec=4)  # Number of decimal places in prediction precision
 pred_params.update(dict(model_arch_fname='{}_arch.yaml'.format(pred_params['model_time']),
                         model_params_fname='{}_params.yaml'.format(pred_params['model_time']),
-                        model_weights_fname='{}_L0.76_E11_weights.h5'.format(pred_params['model_time'])))
+                        model_weights_fname='{}_L3.15_E07_weights.h5'.format(pred_params['model_time'])))
 
 # Removed download parameters since not using AWS dataset (maybe in future?)
 

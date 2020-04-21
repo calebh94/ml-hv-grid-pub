@@ -34,19 +34,19 @@ debug = False
 ########################################
 # Calculate number of test images
 ########################################
-if debug:
-    test_data_dir = op.join(data_dir, 'test_focus')
-    print('Using test images in {}\n'.format(test_data_dir))
-
-    total_test_images = 0
-    # for sub_fold in ['negatives', 'towers', 'substations']:
-    for sub_fold in ['Pole', 'Nopole']:
-        temp_img_dir = op.join(test_data_dir, sub_fold)
-        n_fnames = len([fname for fname in os.listdir(temp_img_dir)
-                        if op.splitext(fname)[1] in ['.png', '.jpg']])
-        print('For testing, found {} {} images'.format(n_fnames, sub_fold))
-
-        total_test_images += n_fnames
+# if debug:
+#     test_data_dir = op.join(data_dir, 'test_focus')
+#     print('Using test images in {}\n'.format(test_data_dir))
+#
+#     total_test_images = 0
+#     # for sub_fold in ['negatives', 'towers', 'substations']:
+#     for sub_fold in ['Pole', 'Nopole']:
+#         temp_img_dir = op.join(test_data_dir, sub_fold)
+#         n_fnames = len([fname for fname in os.listdir(temp_img_dir)
+#                         if op.splitext(fname)[1] in ['.png', '.jpg']])
+#         print('For testing, found {} {} images'.format(n_fnames, sub_fold))
+#
+#         total_test_images += n_fnames
 
 # steps_per_test_epo = int(np.ceil(total_test_images /
 #                                  TP['batch_size']) + 1)
@@ -65,7 +65,9 @@ if debug:
 # Get the Dataset!
 ###################################
 # tfrecord filenames
-tfrecord_test = ['C:\\Users\\harri\\Downloads\\Gabriel_DC_poles_pred_patches_g0.tfrecord.gz']
+tfrecord_test = [
+    'C:\\Users\\harri\\git\\wirestrike-cable-prediction\\imgs\\tfrecord\\Gabriel_DC_poles_eval_patches_g1.tfrecord.gz',
+    'C:\\Users\\harri\\git\\wirestrike-cable-prediction\\imgs\\tfrecord\\Gabriel_DC_poles_eval_patches_g7.tfrecord.gz']
 
 # Define variables needed for functions
 opticalBands = ['b1', 'b2', 'b3']
@@ -80,9 +82,14 @@ COLUMNS = [
 FEATURES_DICT = dict(zip(FEATURES, COLUMNS))
 
 # Parameters to define
-BATCH_SIZE = 16
+BATCH_SIZE = 1
 BUFFER_SIZE = 0
-TEST_SIZE = 2000
+# TEST_SIZE = 2000
+
+# Using eval files for now
+EVAL_SIZE = 16000
+EVAL_FILES = 8
+TF_FILES_EVAL = len(tfrecord_test)
 
 
 # Define functions from EE examples
@@ -138,6 +145,42 @@ def to_tuple_tile_classification(inputs):
     # return stacked[:, :, :len(BANDS)], [tf.reduce_max(stacked[:, :, len(BANDS):])]
     return imgs, labels
 
+
+
+def to_tuple_tile_classification_multi(inputs):
+    """Function to convert a dictionary of tensors to a tuple of (inputs, outputs).
+    Turn the tensors returned by parse_tfrecord into a stack in HWC shape.
+    Args:
+      inputs: A dictionary of tensors, keyed by feature name.
+    Returns:
+      A dtuple of (inputs, outputs).
+    """
+    inputsList = [inputs.get(key) for key in FEATURES]
+    stacked = tf.stack(inputsList, axis=0)
+    # Convert from CHW to HWC
+    stacked = tf.transpose(stacked, [1, 2, 0])
+
+    # Hot encode the labels
+    label_vector = tf.reshape(stacked[:, :, len(BANDS):] / 25, [-1])
+    label_counts = tf.math.bincount(tf.cast(label_vector, tf.int32))
+    label = tf.argmax(label_counts)
+    # label = tf.reduce_mean(stacked[:, :, len(BANDS):]) / 25
+    # label = tf.reduce_max(stacked[:, :, len(BANDS):]) / 25
+    # label = tf.reduce_sum(stacked[:, :, len(BANDS):]) / tf.cast(tf.size(stacked[:, :, len(BANDS):]), tf.float32)
+    # label = tf.reduce_max(stacked[:, :, len(BANDS):])
+    indices = [0, 1, 2, 3, 4]
+    depth = 5
+    labels = tf.one_hot(indices, depth)[int(label)]
+    labels = tf.dtypes.cast(labels, tf.int32)
+    # Scale image data to between -1 and 1
+    imgs = stacked[:, :, :len(BANDS)]
+    imgs /= 127.5
+    imgs -= 1.
+    # return stacked[:,:,:len(BANDS)], stacked[:,:,len(BANDS):]
+    # return stacked[:, :, :len(BANDS)], [tf.reduce_max(stacked[:, :, len(BANDS):])]
+    return imgs, labels
+
+
 def get_dataset(files):
     """Function to read, parse and format to tuple a set of input tfrecord files.
     Get all the files matching the pattern, parse and convert to tuple.
@@ -150,7 +193,7 @@ def get_dataset(files):
     dataset = tf.data.TFRecordDataset(files, compression_type='GZIP')
     dataset = dataset.map(parse_tfrecord, num_parallel_calls=5)
     # test = to_tuple_tile_classification(dataset.take(1))
-    dataset = dataset.map(to_tuple_tile_classification, num_parallel_calls=5)
+    dataset = dataset.map(to_tuple_tile_classification_multi, num_parallel_calls=5)
     return dataset
 
 
@@ -215,7 +258,7 @@ print('Start time: ' + start_time.strftime('%d/%m %H:%M:%S'))
 if debug:
     des_test = 25 # make number with square root as int
 else:
-    des_test = TEST_SIZE
+    des_test = int(EVAL_SIZE * (TF_FILES_EVAL / EVAL_FILES) / BATCH_SIZE * 1)  # Using eval for now
 
 cnt = 0
 y_true = []
@@ -223,7 +266,7 @@ for img, lbl in testing_dataset:
     if cnt >= des_test:
         break
     else:
-        y_true.append(lbl)
+        y_true.append(np.nonzero(lbl.numpy())[1][0])
         cnt=cnt+1
 
 y_pred_probs = parallel_model.predict(testing_dataset,
@@ -240,7 +283,7 @@ if debug:
       plt.yticks([])
       # fix image!
 
-      img = img.squeeze()
+      img = img.numpy().squeeze()
       img = (img + 1) * 127.5
       img = img.astype(int)
       plt.imshow(img, cmap=plt.cm.binary)
@@ -259,10 +302,10 @@ if debug:
     def plot_value_array(i, predictions_array, true_label):
       predictions_array, true_label = predictions_array, true_label[i]
       plt.grid(False)
-      plt.xticks(range(2))
+      plt.xticks(range(5))
       plt.yticks([])
-      thisplot = plt.bar(range(2), predictions_array, color="#777777")
-      plt.ylim([0, 1])
+      thisplot = plt.bar(range(5), predictions_array, color="#777777")
+      plt.ylim([0, predictions_array.max()])
       predicted_label = np.argmax(predictions_array)
 
       thisplot[predicted_label].set_color('red')
@@ -277,7 +320,7 @@ if debug:
 
     img_array = []
     cnt=0
-    for img, lbl in test_iter:
+    for img, lbl in testing_dataset:
         img_array.append(img)
         cnt = cnt+1
         if cnt > num_images:

@@ -255,7 +255,7 @@ def xcept_net(params):
         workers=MP['workers'],
         use_multiprocessing=MP['use_multiprocessing'],
         validation_data=eval_dataset,
-        validation_steps=int(EVAL_SIZE * (TF_FILES_EVAL / EVAL_SIZE)/ BATCH_SIZE * TP['prop_total_img_set']),
+        validation_steps=int(EVAL_SIZE * (TF_FILES_EVAL / EVAL_FILES) / BATCH_SIZE * TP['prop_total_img_set']),
         callbacks=callbacks_phase2,
         class_weight=TP['class_weight'],
         verbose=1)
